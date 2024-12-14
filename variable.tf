@@ -5,3 +5,7 @@ variable "name_app" {
     error_message = "The name_app must be at least one character long."
   }
 }
+
+variable "api_id" {
+  type = string
+}

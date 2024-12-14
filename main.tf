@@ -4,25 +4,14 @@ provider "aws" {
 
 data "archive_file" "authorizer" {
   type        = "zip"
-  source_dir  = "stuff-authorizer"
-  output_path = "stuff-authorizer.zip"
-
-}
-
-data "aws_api_gateway_rest_api" "existing_api" {
-  name = "${var.name_app}-pvt-endpoint"
-}
-
-resource "aws_api_gateway_resource" "stuff_resource" {
-  rest_api_id = data.aws_api_gateway_rest_api.existing_api.id
-  parent_id   = data.aws_api_gateway_rest_api.existing_api.root_resource_id
-  path_part   = "stuff"
+  source_dir  = "product-authorizer"
+  output_path = "product-authorizer.zip"
 }
 
 resource "aws_lambda_function" "authorizer" {
-  filename         = "stuff-authorizer.zip"
+  filename         = "product-authorizer.zip"
   source_code_hash = data.archive_file.authorizer.output_base64sha256
-  function_name    = "stuff-authorizer"
+  function_name    = "product-authorizer"
   role             = aws_iam_role.authorizer_role.arn
   handler          = "index.handler"
   runtime          = "python3.11"
@@ -30,7 +19,7 @@ resource "aws_lambda_function" "authorizer" {
 }
 
 resource "aws_iam_role" "authorizer_role" {
-  name = "your-lambda-authorizer-role"
+  name = "lambda-authorizer"
 
   assume_role_policy = <<-EOF
   {
@@ -48,26 +37,17 @@ resource "aws_iam_role" "authorizer_role" {
   EOF
 }
 
-resource "aws_api_gateway_authorizer" "authorizer" {
-  name                   = "your-authorizer-name"
-  rest_api_id            = data.aws_api_gateway_rest_api.existing_api.id
-  authorizer_uri         = aws_lambda_function.authorizer.invoke_arn
-  authorizer_credentials = aws_iam_role.authorizer_role.arn
+resource "aws_apigatewayv2_integration" "lambda_integration" {
+  api_id             = var.api_id  
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.authorizer.arn
+  payload_format_version = "2.0"  
+
 }
 
-resource "aws_api_gateway_method" "stuff_method" {
-  rest_api_id   = data.aws_api_gateway_rest_api.existing_api.id
-  resource_id   = aws_api_gateway_resource.stuff_resource.id
-  http_method   = "GET"
-  authorization = "CUSTOM"
-  authorizer_id = aws_api_gateway_authorizer.authorizer.id
-}
+resource "aws_apigatewayv2_route" "lambda_route" {
+  api_id    = var.api_id  
+  route_key = "POST /login"         
 
-resource "aws_api_gateway_integration" "stuff_integration" {
-  rest_api_id             = data.aws_api_gateway_rest_api.existing_api.id
-  resource_id             = aws_api_gateway_resource.stuff_resource.id
-  http_method             = aws_api_gateway_method.stuff_method.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.authorizer.invoke_arn
+  target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
